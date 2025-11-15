@@ -2,9 +2,9 @@ const { Client, GatewayIntentBits, EmbedBuilder, Partials } = require('discord.j
 
 // Config
 const config = {
-  token: 'NjgyOTc1NDc1OTUzMzAzNjgx.GN-S8b.Gr6imnlhShKkiMP2BIp0rDUSs2UbWtE-HDA6pM', // Token d'ID du bot
-  channelIdToWatch: '1412897322211344434', // Channel #annonce lg
-  logChannelId: '1439056100920918177', // Channel #detecteur a putes
+  token: process.env.TOKEN,
+  channelIdToWatch: process.env.CHANNEL_ID_TO_WATCH,
+  logChannelId: process.env.LOG_CHANNEL_ID,
 };
 
 // Créer le client Discord
@@ -111,5 +111,6 @@ client.on('error', error => {
 process.on('unhandledRejection', error => {
   console.error('Erreur non gérée:', error);
 });
+
 
 client.login(config.token);
