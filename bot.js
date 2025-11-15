@@ -2,7 +2,7 @@ const { Client, GatewayIntentBits, EmbedBuilder, Partials } = require('discord.j
 
 // Config
 const config = {
-  token: process.env.TOKEN,
+  token: process.env.BOT_TOKEN,
   channelIdToWatch: process.env.CHANNEL_ID_TO_WATCH,
   logChannelId: process.env.LOG_CHANNEL_ID,
 };
@@ -114,3 +114,4 @@ process.on('unhandledRejection', error => {
 
 
 client.login(config.token);
+
