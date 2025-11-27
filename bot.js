@@ -103,9 +103,9 @@ const commands = [
   new SlashCommandBuilder()
     .setName('ajout_partie')
     .setDescription('Ajouter une partie de Loup-Garou')
-    .addUserOption(option =>
-      option.setName('gagnant')
-        .setDescription('Mention Discord du gagnant')
+    .addStringOption(option =>
+      option.setName('gagnants')
+        .setDescription('Gagnant(s) séparés par des virgules (ex: @User1,@User2 ou Joueur1,Joueur2)')
         .setRequired(true))
     .addStringOption(option =>
       option.setName('joueurs')
@@ -528,15 +528,38 @@ client.on('interactionCreate', async (interaction) => {
     }
   }
 
-  // Commande /ajout_partie
   if (interaction.commandName === 'ajout_partie') {
     try {
-      const winnerUser = interaction.options.getUser('gagnant');
-      const winnerName = getPlayerName(winnerUser.id);
+      const winnersStr = interaction.options.getString('gagnants');
       const playersStr = interaction.options.getString('joueurs');
 
+      // Parser les gagnants (peut être plusieurs)
+      const winnersList = [];
+      const winnerParts = winnersStr.split(',');
+      
+      for (const part of winnerParts) {
+        const trimmed = part.trim();
+        // Extraire les mentions <@123456789>
+        const mentionMatch = trimmed.match(/<@!?(\d+)>/);
+        
+        if (mentionMatch) {
+          const userId = mentionMatch[1];
+          const name = getPlayerName(userId);
+          winnersList.push(name);
+        } else {
+          // Pseudo simple
+          winnersList.push(trimmed);
+        }
+      }
+
+      if (winnersList.length === 0) {
+        return interaction.reply({
+          content: '❌ Format invalide pour les gagnants. Utilisez: `@User1,@User2` ou `Joueur1,Joueur2`',
+          ephemeral: true
+        });
+      }
+
       // Parser la liste des joueurs
-      // Supporte: @User:3 ou Pseudo:3
       const playersList = [];
       const parts = playersStr.split(',');
       
@@ -572,7 +595,7 @@ client.on('interactionCreate', async (interaction) => {
       // Enregistrer la partie
       const gameData = {
         date: new Date().toISOString(),
-        winner: winnerName,
+        winners: winnersList, // Maintenant c'est un tableau
         players: playersList
       };
 
@@ -599,24 +622,32 @@ client.on('interactionCreate', async (interaction) => {
           pData.bestKills = player.kills;
         }
         
-        if (player.name.toLowerCase() === winnerName.toLowerCase()) {
+        // Vérifier si ce joueur est un gagnant
+        if (winnersList.some(w => w.toLowerCase() === player.name.toLowerCase())) {
           pData.wins++;
         }
       });
 
       saveStats(statsData);
 
+      // Afficher les gagnants avec mentions Discord si possible
+      const winnersDisplay = winnersList.map(w => {
+        const discordId = getDiscordId(w);
+        return discordId ? `${w} (<@${discordId}>)` : w;
+      }).join(', ');
+
       const embed = new EmbedBuilder()
         .setColor('#00FF00')
         .setTitle('✅ Partie Loup-Garou enregistrée !')
         .addFields(
-          { name: '🏆 Gagnant', value: `${winnerName} (<@${winnerUser.id}>)`, inline: true },
+          { name: '🏆 Gagnant(s)', value: winnersDisplay, inline: false },
           { name: '👥 Joueurs', value: `${playersList.length}`, inline: true }
         )
         .setDescription(`**Résultats:**\n${playersList.map(p => {
           const discordId = getDiscordId(p.name);
           const display = discordId ? `${p.name} (<@${discordId}>)` : p.name;
-          return `• ${display}: ${p.kills} kill${p.kills > 1 ? 's' : ''}`;
+          const isWinner = winnersList.some(w => w.toLowerCase() === p.name.toLowerCase());
+          return `${isWinner ? '👑 ' : ''}• ${display}: ${p.kills} kill${p.kills > 1 ? 's' : ''}`;
         }).join('\n')}`)
         .setTimestamp();
 
@@ -709,5 +740,6 @@ process.on('unhandledRejection', error => {
 
 // Connexion du bot
 client.login(config.token);
+
 
 
