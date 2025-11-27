@@ -4,7 +4,7 @@ const path = require('path');
 
 // Configuration
 const config = {
-  token: process.env.TOKEN || 'VOTRE_TOKEN_BOT',
+  token: process.env.BOT_TOKEN || 'VOTRE_TOKEN_BOT',
   channelIdToWatch: process.env.CHANNEL_ID_TO_WATCH || 'ID_DU_CHANNEL_A_SURVEILLER',
   logChannelId: process.env.LOG_CHANNEL_ID || 'ID_DU_CHANNEL_DE_LOG',
   clientId: process.env.CLIENT_ID || 'VOTRE_CLIENT_ID', // ID de l'application
@@ -715,3 +715,4 @@ process.on('unhandledRejection', error => {
 
 // Connexion du bot
 client.login(config.token);
+
