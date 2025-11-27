@@ -36,7 +36,7 @@ function loadStats() {
   } catch (error) {
     console.error('Erreur lors du chargement des stats:', error);
   }
-  return { players: {}, games: [] };
+  return { players: {}, games: [], discordLinks: {} };
 }
 
 // Sauvegarder les stats dans le fichier
@@ -51,6 +51,28 @@ function saveStats(stats) {
 // Initialiser les stats
 let statsData = loadStats();
 
+// Fonction pour obtenir le nom du joueur depuis Discord ID ou pseudo
+function getPlayerName(discordIdOrName) {
+  // Si c'est un ID Discord, chercher le lien
+  if (statsData.discordLinks && statsData.discordLinks[discordIdOrName]) {
+    return statsData.discordLinks[discordIdOrName];
+  }
+  // Sinon, retourner le nom tel quel
+  return discordIdOrName;
+}
+
+// Fonction pour obtenir l'ID Discord depuis le pseudo
+function getDiscordId(playerName) {
+  if (statsData.discordLinks) {
+    for (const [discordId, pseudo] of Object.entries(statsData.discordLinks)) {
+      if (pseudo.toLowerCase() === playerName.toLowerCase()) {
+        return discordId;
+      }
+    }
+  }
+  return null;
+}
+
 // Définir les commandes slash
 const commands = [
   new SlashCommandBuilder()
@@ -60,9 +82,9 @@ const commands = [
   new SlashCommandBuilder()
     .setName('stats')
     .setDescription('Affiche les statistiques d\'un joueur')
-    .addStringOption(option =>
+    .addUserOption(option =>
       option.setName('joueur')
-        .setDescription('Nom du joueur (optionnel, vous par défaut)')
+        .setDescription('Mention Discord du joueur (optionnel, vous par défaut)')
         .setRequired(false)),
   
   new SlashCommandBuilder()
@@ -81,37 +103,54 @@ const commands = [
   new SlashCommandBuilder()
     .setName('ajout_partie')
     .setDescription('Ajouter une partie de Loup-Garou')
-    .addStringOption(option =>
+    .addUserOption(option =>
       option.setName('gagnant')
-        .setDescription('Nom du gagnant')
+        .setDescription('Mention Discord du gagnant')
         .setRequired(true))
     .addStringOption(option =>
       option.setName('joueurs')
-        .setDescription('Liste des joueurs et leurs kills (ex: Joueur1:3,Joueur2:2,Joueur3:0)')
+        .setDescription('Liste des joueurs et kills (ex: @User1:3,@User2:2) ou noms (Joueur1:3,Joueur2:2)')
+        .setRequired(true)),
+  
+  new SlashCommandBuilder()
+    .setName('lier')
+    .setDescription('Lier un compte Discord à un pseudo de joueur')
+    .addUserOption(option =>
+      option.setName('discord')
+        .setDescription('Utilisateur Discord')
+        .setRequired(true))
+    .addStringOption(option =>
+      option.setName('pseudo')
+        .setDescription('Pseudo du joueur dans le jeu')
+        .setRequired(true)),
+  
+  new SlashCommandBuilder()
+    .setName('delier')
+    .setDescription('Délier un compte Discord')
+    .addUserOption(option =>
+      option.setName('discord')
+        .setDescription('Utilisateur Discord à délier')
         .setRequired(true))
 ].map(command => command.toJSON());
-
-// Enregistrer les commandes slash
-const rest = new REST({ version: '10' }).setToken(config.token);
-
-(async () => {
-  try {
-    console.log('🔄 Enregistrement des commandes slash...');
-    await rest.put(
-      Routes.applicationCommands(config.clientId),
-      { body: commands },
-    );
-    console.log('✅ Commandes slash enregistrées avec succès!');
-  } catch (error) {
-    console.error('❌ Erreur lors de l\'enregistrement des commandes:', error);
-  }
-})();
 
 // Événement : Bot prêt
 client.once('ready', async () => {
   console.log(`✅ Bot connecté en tant que ${client.user.tag}`);
   console.log(`📡 Surveillance du channel: ${config.channelIdToWatch}`);
   console.log(`📝 Logs envoyés dans: ${config.logChannelId}`);
+  
+  // Enregistrer les commandes slash APRÈS la connexion
+  try {
+    console.log('🔄 Enregistrement des commandes slash...');
+    const rest = new REST({ version: '10' }).setToken(config.token);
+    await rest.put(
+      Routes.applicationCommands(client.user.id),
+      { body: commands },
+    );
+    console.log('✅ Commandes slash enregistrées avec succès!');
+  } catch (error) {
+    console.error('❌ Erreur lors de l\'enregistrement des commandes:', error);
+  }
   
   // Rechercher le dernier message mentionnant le bot au démarrage
   try {
@@ -363,12 +402,22 @@ client.on('interactionCreate', async (interaction) => {
   // Commande /stats
   if (interaction.commandName === 'stats') {
     try {
-      const playerName = interaction.options.getString('joueur') || interaction.user.username;
+      let playerName;
+      const userOption = interaction.options.getUser('joueur');
+      
+      if (userOption) {
+        // Utilisateur mentionné
+        playerName = getPlayerName(userOption.id) || userOption.username;
+      } else {
+        // Utilisateur actuel
+        playerName = getPlayerName(interaction.user.id) || interaction.user.username;
+      }
+
       const playerData = statsData.players[playerName.toLowerCase()];
 
       if (!playerData) {
         return interaction.reply({
-          content: `❌ Aucune statistique trouvée pour **${playerName}**.`,
+          content: `❌ Aucune statistique trouvée pour **${playerName}**.\n💡 Utilisez \`/lier\` pour lier votre compte Discord à votre pseudo de jeu.`,
           ephemeral: true
         });
       }
@@ -377,9 +426,14 @@ client.on('interactionCreate', async (interaction) => {
         ? ((playerData.wins / playerData.gamesPlayed) * 100).toFixed(1) 
         : 0;
 
+      const discordId = getDiscordId(playerName);
+      const title = discordId 
+        ? `🐺 Stats Loup-Garou - ${playerName} (<@${discordId}>)`
+        : `🐺 Stats Loup-Garou - ${playerName}`;
+
       const embed = new EmbedBuilder()
         .setColor('#FFD700')
-        .setTitle(`🐺 Stats Loup-Garou - ${playerName}`)
+        .setTitle(title)
         .addFields(
           { name: '🎮 Parties jouées', value: `${playerData.gamesPlayed}`, inline: true },
           { name: '🎯 Winrate', value: `${winrate}%`, inline: true },
@@ -455,7 +509,11 @@ client.on('interactionCreate', async (interaction) => {
             stat = `${data.wins} victoires`;
         }
         
-        description += `${medal} **${name}** - ${stat}\n`;
+        // Ajouter la mention Discord si liée
+        const discordId = getDiscordId(name);
+        const displayName = discordId ? `${name} (<@${discordId}>)` : name;
+        
+        description += `${medal} **${displayName}** - ${stat}\n`;
       });
 
       const embed = new EmbedBuilder()
@@ -479,18 +537,40 @@ client.on('interactionCreate', async (interaction) => {
   // Commande /ajout_partie
   if (interaction.commandName === 'ajout_partie') {
     try {
-      const winner = interaction.options.getString('gagnant');
+      const winnerUser = interaction.options.getUser('gagnant');
+      const winnerName = getPlayerName(winnerUser.id);
       const playersStr = interaction.options.getString('joueurs');
 
-      // Parser la liste des joueurs (format: Joueur1:3,Joueur2:2,Joueur3:0)
-      const playersList = playersStr.split(',').map(p => {
-        const [name, kills] = p.trim().split(':');
-        return { name: name.trim(), kills: parseInt(kills) || 0 };
-      });
+      // Parser la liste des joueurs
+      // Supporte: @User:3 ou Pseudo:3
+      const playersList = [];
+      const parts = playersStr.split(',');
+      
+      for (const part of parts) {
+        const trimmed = part.trim();
+        // Extraire les mentions <@123456789>:kills
+        const mentionMatch = trimmed.match(/<@!?(\d+)>:(\d+)/);
+        
+        if (mentionMatch) {
+          const userId = mentionMatch[1];
+          const kills = parseInt(mentionMatch[2]) || 0;
+          const name = getPlayerName(userId);
+          playersList.push({ name, kills });
+        } else {
+          // Format classique Pseudo:kills
+          const [name, kills] = trimmed.split(':');
+          if (name) {
+            playersList.push({ 
+              name: name.trim(), 
+              kills: parseInt(kills) || 0 
+            });
+          }
+        }
+      }
 
       if (playersList.length === 0) {
         return interaction.reply({
-          content: '❌ Format invalide. Utilisez: `Joueur1:3,Joueur2:2,Joueur3:0`',
+          content: '❌ Format invalide. Utilisez: `@User1:3,@User2:2` ou `Joueur1:3,Joueur2:2`',
           ephemeral: true
         });
       }
@@ -498,7 +578,7 @@ client.on('interactionCreate', async (interaction) => {
       // Enregistrer la partie
       const gameData = {
         date: new Date().toISOString(),
-        winner: winner,
+        winner: winnerName,
         players: playersList
       };
 
@@ -525,7 +605,7 @@ client.on('interactionCreate', async (interaction) => {
           pData.bestKills = player.kills;
         }
         
-        if (player.name.toLowerCase() === winner.toLowerCase()) {
+        if (player.name.toLowerCase() === winnerName.toLowerCase()) {
           pData.wins++;
         }
       });
@@ -536,10 +616,14 @@ client.on('interactionCreate', async (interaction) => {
         .setColor('#00FF00')
         .setTitle('✅ Partie Loup-Garou enregistrée !')
         .addFields(
-          { name: '🏆 Gagnant', value: winner, inline: true },
+          { name: '🏆 Gagnant', value: `${winnerName} (<@${winnerUser.id}>)`, inline: true },
           { name: '👥 Joueurs', value: `${playersList.length}`, inline: true }
         )
-        .setDescription(`**Résultats:**\n${playersList.map(p => `• ${p.name}: ${p.kills} kill${p.kills > 1 ? 's' : ''}`).join('\n')}`)
+        .setDescription(`**Résultats:**\n${playersList.map(p => {
+          const discordId = getDiscordId(p.name);
+          const display = discordId ? `${p.name} (<@${discordId}>)` : p.name;
+          return `• ${display}: ${p.kills} kill${p.kills > 1 ? 's' : ''}`;
+        }).join('\n')}`)
         .setTimestamp();
 
       await interaction.reply({ embeds: [embed] });
@@ -548,6 +632,77 @@ client.on('interactionCreate', async (interaction) => {
       console.error('Erreur lors de la commande /ajout_partie:', error);
       await interaction.reply({
         content: '❌ Une erreur est survenue lors de l\'ajout de la partie.',
+        ephemeral: true
+      });
+    }
+  }
+
+  // Commande /lier
+  if (interaction.commandName === 'lier') {
+    try {
+      const discordUser = interaction.options.getUser('discord');
+      const pseudo = interaction.options.getString('pseudo');
+
+      if (!statsData.discordLinks) {
+        statsData.discordLinks = {};
+      }
+
+      // Vérifier si l'utilisateur est déjà lié
+      if (statsData.discordLinks[discordUser.id]) {
+        return interaction.reply({
+          content: `⚠️ <@${discordUser.id}> est déjà lié au pseudo **${statsData.discordLinks[discordUser.id]}**.\nUtilisez \`/delier\` d'abord pour changer.`,
+          ephemeral: true
+        });
+      }
+
+      statsData.discordLinks[discordUser.id] = pseudo;
+      saveStats(statsData);
+
+      const embed = new EmbedBuilder()
+        .setColor('#00FF00')
+        .setTitle('✅ Compte lié !')
+        .setDescription(`<@${discordUser.id}> est maintenant lié au pseudo **${pseudo}**`)
+        .setTimestamp();
+
+      await interaction.reply({ embeds: [embed] });
+
+    } catch (error) {
+      console.error('Erreur lors de la commande /lier:', error);
+      await interaction.reply({
+        content: '❌ Une erreur est survenue.',
+        ephemeral: true
+      });
+    }
+  }
+
+  // Commande /delier
+  if (interaction.commandName === 'delier') {
+    try {
+      const discordUser = interaction.options.getUser('discord');
+
+      if (!statsData.discordLinks || !statsData.discordLinks[discordUser.id]) {
+        return interaction.reply({
+          content: `❌ <@${discordUser.id}> n'est lié à aucun pseudo.`,
+          ephemeral: true
+        });
+      }
+
+      const oldPseudo = statsData.discordLinks[discordUser.id];
+      delete statsData.discordLinks[discordUser.id];
+      saveStats(statsData);
+
+      const embed = new EmbedBuilder()
+        .setColor('#FF0000')
+        .setTitle('✅ Compte délié !')
+        .setDescription(`<@${discordUser.id}> n'est plus lié au pseudo **${oldPseudo}**`)
+        .setTimestamp();
+
+      await interaction.reply({ embeds: [embed] });
+
+    } catch (error) {
+      console.error('Erreur lors de la commande /delier:', error);
+      await interaction.reply({
+        content: '❌ Une erreur est survenue.',
         ephemeral: true
       });
     }
