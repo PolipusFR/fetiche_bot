@@ -236,12 +236,13 @@ client.on('messageReactionAdd', async (reaction, user) => {
 
     // Ignorer les réactions du bot lui-même
     if (user.bot) return;
+    // Ignorer si c'est pas l'emoji participation
+    if (reaction.emoji.toString() !== '✅') return;
+    // Monitorer seulement les messages mentionnant le bot
+    if (!reaction.message.mentions.has(client.user.id)) return;
 
     // Vérifier si c'est le bon channel
     if (reaction.message.channel.id !== config.channelIdToWatch) return;
-
-    // Vérifier si le message mentionne le bot
-    if (!reaction.message.mentions.has(client.user.id)) return;
 
     // Récupérer le channel de log
     const logChannel = await client.channels.fetch(config.logChannelId);
@@ -254,13 +255,9 @@ client.on('messageReactionAdd', async (reaction, user) => {
       .setDescription(`**${user.tag}** a ajouté une réaction`)
       .addFields(
         { name: '👤 Utilisateur', value: `<@${user.id}>`, inline: true },
-        { name: '😀 Réaction', value: reaction.emoji.toString(), inline: true },
         { name: '📊 Total', value: `${reaction.count}`, inline: true },
-        { name: '💬 Message', value: reaction.message.content || '*[Message sans texte ou embed]*' },
-        { name: '🔗 Lien', value: `[Aller au message](${reaction.message.url})` }
       )
       .setTimestamp()
-      .setFooter({ text: `Message ID: ${reaction.message.id}` });
 
     await logChannel.send({ embeds: [embed] });
 
@@ -279,12 +276,13 @@ client.on('messageReactionRemove', async (reaction, user) => {
 
     // Ignorer les réactions du bot lui-même
     if (user.bot) return;
+    // Ignorer si c'est pas l'emoji participation
+    if (reaction.emoji.toString() !== '✅') return;
+    // Monitorer seulement les messages mentionnant le bot
+    if (!reaction.message.mentions.has(client.user.id)) return;
 
     // Vérifier si c'est le bon channel
     if (reaction.message.channel.id !== config.channelIdToWatch) return;
-
-    // Vérifier si c'est le dernier message mentionnant le bot
-    if (reaction.message.id !== lastBotMentionMessageId) return;
 
     // Récupérer le channel de log
     const logChannel = await client.channels.fetch(config.logChannelId);
@@ -297,13 +295,9 @@ client.on('messageReactionRemove', async (reaction, user) => {
       .setDescription(`**${user.tag}** a retiré une réaction`)
       .addFields(
         { name: '👤 Utilisateur', value: `<@${user.id}>`, inline: true },
-        { name: '😀 Réaction', value: reaction.emoji.toString(), inline: true },
-        { name: '📊 Total', value: `${reaction.count}`, inline: true },
-        { name: '💬 Message', value: reaction.message.content || '*[Message sans texte ou embed]*' },
-        { name: '🔗 Lien', value: `[Aller au message](${reaction.message.url})` }
+        { name: '📊 Total', value: `${reaction.count}`, inline: true }
       )
       .setTimestamp()
-      .setFooter({ text: `Message ID: ${reaction.message.id}` });
 
     await logChannel.send({ embeds: [embed] });
 
@@ -715,4 +709,5 @@ process.on('unhandledRejection', error => {
 
 // Connexion du bot
 client.login(config.token);
+
 
